@@ -1,8 +1,8 @@
-import Testing
-import Foundation
 @testable import PathWorks
+import Foundation
+import Testing
 
-@Suite struct PathWorksTests {
+struct PathWorksTests {
     @Test func stringFilePath() {
         let empty: [String] = []
 

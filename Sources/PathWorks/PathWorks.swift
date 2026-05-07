@@ -37,7 +37,9 @@ public extension [String] {
     /// representation, indicating the path starts from the file system root.
     ///
     /// - Complexity: O(n) where n is the total character count of all components
-    var rootPath: String { "/" + path }
+    var rootPath: String {
+        "/" + path
+    }
 
     /// An absolute Windows-style path with backslash separators.
     ///
@@ -45,7 +47,9 @@ public extension [String] {
     /// a leading backslash to the relative backslash path representation.
     ///
     /// - Complexity: O(n) where n is the total character count of all components
-    var rootPathBackslash: String { "\\" + backslashPath }
+    var rootPathBackslash: String {
+        "\\" + backslashPath
+    }
 }
 
 public extension String {
@@ -56,14 +60,16 @@ public extension String {
     ///
     /// - Complexity: O(n) where n is the length of the path string
     var pathComponents: [String] {
-        return self.split(separator: "/", omittingEmptySubsequences: true).map { String($0) }
+        self.split(separator: "/", omittingEmptySubsequences: true).map { String($0) }
     }
 
     /// The last path component, or `nil` if the path is empty.
     ///
     /// Extracts the final component from the path, typically representing a filename
     /// or the deepest directory name.
-    var lastPathComponent: String? { pathComponents.last }
+    var lastPathComponent: String? {
+        pathComponents.last
+    }
 
     /// The path with the last component removed.
     ///
@@ -146,8 +152,7 @@ public extension String {
     ///
     /// - Complexity: O(n) where n is the length of the path string
     var directoryBaseNameAndExtensionFromPath:
-        (directory: String, baseName: String, extension: String)
-    {
+        (directory: String, baseName: String, extension: String) {
         let d = self.removingLastPathComponent
 
         guard let file = self.lastPathComponent, !file.isEmpty else {
@@ -304,7 +309,7 @@ public extension String {
     }
 
     var isSafeFilenameForNTFS: Bool {
-        if let last = last, last.isWhitespace || last == "." {
+        if let last, last.isWhitespace || last == "." {
             return false
         }
 
