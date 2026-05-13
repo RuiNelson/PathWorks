@@ -13,7 +13,7 @@ A lightweight Swift library that extends `String` and `[String]` with ergonomic 
 Add PathWorks to your `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/your-org/PathWorks.git", from: "1.0.0")
+.package(url: "https://github.com/RuiNelson/PathWorks.git", from: "1.0.0")
 ```
 
 Then add `"PathWorks"` to your target's dependencies:
