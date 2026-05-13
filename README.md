@@ -19,7 +19,7 @@ Add PathWorks to your `Package.swift`:
 Then add `"PathWorks"` to your target's dependencies:
 
 ```swift
-.target(name: "YourTarget", dependencies: ["PathWorks"])
+.target(name: "YourTarget", dependencies: [.product(name: "PathWorks", package: "PathWorks")])
 ```
 
 ---
