@@ -3,8 +3,8 @@ import Foundation
 public extension [String] {
     /// A relative file system path constructed from path components.
     ///
-    /// Joins array elements using Unix path separators ("/") to create a hierarchical
-    /// file path structure. Empty arrays produce empty strings.
+    /// Joins array elements using Unix path separators ("/") to create a hierarchical file path structure. Empty arrays
+    /// produce empty strings.
     ///
     /// - Note: Uses Unix-style separators regardless of platform
     /// - Complexity: O(n) where n is the total character count of all components
@@ -18,8 +18,8 @@ public extension [String] {
 
     /// A Windows-style file system path using backslash separators.
     ///
-    /// Creates file paths compatible with Microsoft Windows file systems by joining
-    /// components with backslash characters ("\\"). Empty arrays produce empty strings.
+    /// Creates file paths compatible with Microsoft Windows file systems by joining components with backslash
+    /// characters ("\\"). Empty arrays produce empty strings.
     ///
     /// - Note: Primarily useful for Windows compatibility or generating Windows-specific file references
     /// - Complexity: O(n) where n is the total character count of all components
@@ -33,8 +33,8 @@ public extension [String] {
 
     /// An absolute file system path with a root separator.
     ///
-    /// Creates an absolute path by prepending a leading slash to the relative path
-    /// representation, indicating the path starts from the file system root.
+    /// Creates an absolute path by prepending a leading slash to the relative path representation, indicating the path
+    /// starts from the file system root.
     ///
     /// - Complexity: O(n) where n is the total character count of all components
     var rootPath: String {
@@ -43,8 +43,8 @@ public extension [String] {
 
     /// An absolute Windows-style path with backslash separators.
     ///
-    /// Creates an absolute path using Microsoft's backslash convention by prepending
-    /// a leading backslash to the relative backslash path representation.
+    /// Creates an absolute path using Microsoft's backslash convention by prepending a leading backslash to the
+    /// relative backslash path representation.
     ///
     /// - Complexity: O(n) where n is the total character count of all components
     var rootPathBackslash: String {
@@ -55,8 +55,8 @@ public extension [String] {
 public extension String {
     /// Path components extracted from the string.
     ///
-    /// Decomposes the string into individual path components by parsing it as a file URL
-    /// and extracting its path components. Empty components and root separators are filtered out.
+    /// Decomposes the string into individual path components by parsing it as a file URL and extracting its path
+    /// components. Empty components and root separators are filtered out.
     ///
     /// - Complexity: O(n) where n is the length of the path string
     var pathComponents: [String] {
@@ -65,16 +65,15 @@ public extension String {
 
     /// The last path component, or `nil` if the path is empty.
     ///
-    /// Extracts the final component from the path, typically representing a filename
-    /// or the deepest directory name.
+    /// Extracts the final component from the path, typically representing a filename or the deepest directory name.
     var lastPathComponent: String? {
         pathComponents.last
     }
 
     /// The path with the last component removed.
     ///
-    /// Creates a new path by removing the final component. For absolute paths (beginning with '/'),
-    /// the result remains absolute. For relative paths, the result remains relative.
+    /// Creates a new path by removing the final component. For absolute paths (beginning with '/'), the result remains
+    /// absolute. For relative paths, the result remains relative.
     ///
     /// - Note: If the path contains only one component, an empty string or root path is produced
     /// - Complexity: O(n) where n is the length of the path string
@@ -90,9 +89,8 @@ public extension String {
 
     /// Appends a path component to create a new path.
     ///
-    /// Adds the specified component to the end of the current path. For absolute paths
-    /// (beginning with '/'), the result remains absolute. The component itself is parsed
-    /// for additional path separators.
+    /// Adds the specified component to the end of the current path. For absolute paths (beginning with '/'), the result
+    /// remains absolute. The component itself is parsed for additional path separators.
     ///
     /// - Parameter pc: The path component to append
     /// - Complexity: O(n + m) where n is the current path length and m is the component length
@@ -106,8 +104,8 @@ public extension String {
 
     /// Appends multiple path components to create a new path.
     ///
-    /// Sequentially adds each component from the array to the current path. For absolute paths
-    /// (beginning with '/'), the result remains absolute.
+    /// Sequentially adds each component from the array to the current path. For absolute paths (beginning with '/'),
+    /// the result remains absolute.
     ///
     /// - Parameter pcs: Array of path components to append
     /// - Complexity: O(n × m) where n is the number of components and m is the average component length
@@ -121,8 +119,8 @@ public extension String {
 
     /// The filename separated into base name and extension.
     ///
-    /// Splits the string at the last period (.) to extract the base name and file extension.
-    /// If no extension exists, the extension component is `nil`.
+    /// Splits the string at the last period (.) to extract the base name and file extension. If no extension exists,
+    /// the extension component is `nil`.
     ///
     /// ## Edge Cases
     /// - Files without extensions result in `(originalString, nil)`
@@ -144,8 +142,8 @@ public extension String {
 
     /// The path decomposed into directory, base name, and extension components.
     ///
-    /// Extracts all three major components of a file path: the containing directory,
-    /// the base filename, and the file extension.
+    /// Extracts all three major components of a file path: the containing directory, the base filename, and the file
+    /// extension.
     ///
     /// ## Error Conditions
     /// - Triggers `fatalError` if the path contains no filename component
@@ -166,8 +164,8 @@ public extension String {
 
     /// All intermediate paths leading to the current path.
     ///
-    /// Generates a sequence of progressively deeper paths, starting from the shortest
-    /// and ending with the full path. Useful for creating directory hierarchies.
+    /// Generates a sequence of progressively deeper paths, starting from the shortest and ending with the full path.
+    /// Useful for creating directory hierarchies.
     ///
     /// ## Edge Cases
     /// - Empty strings produce empty arrays
@@ -201,9 +199,8 @@ public extension String {
 
     /// A path relative to the specified base path.
     ///
-    /// Computes the relative path by removing common leading components between
-    /// the current path and the base path. If paths don't share common components,
-    /// the original path is preserved.
+    /// Computes the relative path by removing common leading components between the current path and the base path. If
+    /// paths don't share common components, the original path is preserved.
     ///
     /// - Parameter basePath: The base path to compute relativity against
     /// - Complexity: O(min(n, m)) where n and m are the component counts of both paths
@@ -225,9 +222,8 @@ public extension String {
 
     /// Determines path equality with configurable case sensitivity.
     ///
-    /// Compares two file paths by decomposing them into components and comparing
-    /// hash values. Case sensitivity can be controlled for file systems that are
-    /// case-insensitive.
+    /// Compares two file paths by decomposing them into components and comparing hash values. Case sensitivity can be
+    /// controlled for file systems that are case-insensitive.
     ///
     /// - Parameters:
     ///   - other: The path to compare against
@@ -273,8 +269,8 @@ private let ntfsReservedFilenames = [
 public extension String {
     /// A filename safe for use on NTFS file systems.
     ///
-    /// Converts the string into a valid NTFS filename by replacing forbidden characters
-    /// with periods and handling reserved filenames. Trailing whitespace is removed.
+    /// Converts the string into a valid NTFS filename by replacing forbidden characters with periods and handling
+    /// reserved filenames. Trailing whitespace is removed.
     ///
     /// ## NTFS Restrictions
     /// - Forbidden characters: `< > : " / \ | ? *`
