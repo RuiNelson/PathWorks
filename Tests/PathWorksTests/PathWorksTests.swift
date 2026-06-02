@@ -59,11 +59,13 @@ struct PathWorksTests {
         #expect("a/b/c".intermediaryPaths == ["a", "a/b", "a/b/c"])
         #expect("/a/b/c".intermediaryPaths == ["/a", "/a/b", "/a/b/c"])
         #expect("/a/b/c/".intermediaryPaths == ["/a", "/a/b", "/a/b/c"])
-
+    }
+    
+    @Test func ntfs() {
         #expect("a:b".safeFilenameForNTFS == "a.b")
         #expect("a/b".safeFilenameForNTFS == "a.b")
         #expect("a\\b".safeFilenameForNTFS == "a.b")
-
+        
         #expect("COM1".safeFilenameForNTFS == "_COM1_")
         #expect("CON.TXT".safeFilenameForNTFS == "_CON_.TXT")
         #expect("abc ".safeFilenameForNTFS == "abc")
@@ -82,5 +84,40 @@ struct PathWorksTests {
         #expect("/abc/xyz".samePath(otherPath: "abc/xyz", caseSensitive: true))
         #expect("abc/xyz".samePath(otherPath: "/abc/xyz", caseSensitive: true))
         #expect("ABC/xyz".samePath(otherPath: "abc/XYZ", caseSensitive: false))
+    }
+    
+    @Test func dots() {
+        // Single dot
+        #expect("a/./b".pathComponents.path == "a/b")
+        #expect("a/b/.".pathComponents.path == "a/b")
+        #expect("a/.".lastPathComponent == "a")
+        #expect(".".pathComponents.path == "")
+        #expect("./a/b".pathComponents.path == "a/b")
+        #expect("a/././b".pathComponents.path == "a/b")
+
+        // Double dot
+        #expect("a/../b".pathComponents.path == "b")
+        #expect("a/..".pathComponents.path == "")
+        #expect("a/b/..".pathComponents.path == "a")
+        #expect("a/b/../../c".pathComponents.path == "c")
+        #expect("a/b/c/../../../x".pathComponents.path == "x")
+        #expect("a/b/c/../../../../x".pathComponents.path == "../x")
+        #expect("a/b/../c/./d".pathComponents.path == "a/c/d")
+
+        // Double dot at start preserved
+        #expect("../a".pathComponents.path == "../a")
+        #expect("../../a".pathComponents.path == "../../a")
+        #expect("..".pathComponents.path == "..")
+
+        // Absolute paths with dots
+        #expect("/a/../b".pathComponents.path == "/b")
+        #expect("/a/b/../..".pathComponents.path == "/")
+
+        // Relative with dots
+        #expect("a/b/c".relative(to: "a/b/c/d") == "..")
+        #expect("a/b/./c".relative(to: "a/b/c/d") == "..")
+        #expect("a/b/x".relative(to: "a/b/c") == "../x")
+        #expect("a/b/x/..".relative(to: "a/b/c") == "c")
+        #expect("a".relative(to: "b") == "../a")
     }
 }
