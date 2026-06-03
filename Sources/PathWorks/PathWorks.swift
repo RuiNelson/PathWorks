@@ -1,5 +1,19 @@
 import Foundation
 
+private func resolve(_ component: String, into result: inout [String], isAbsolute: Bool) {
+    if component == "." {
+        return
+    } else if component == ".." {
+        if let last = result.last, last != ".." {
+            result.removeLast()
+        } else if !isAbsolute {
+            result.append(component)
+        }
+    } else {
+        result.append(component)
+    }
+}
+
 public extension [String] {
     /// A relative file system path constructed from path components.
     ///
@@ -53,29 +67,40 @@ public extension [String] {
 }
 
 public extension String {
-    /// Path components extracted from the string.
+    /// Resolved path components extracted from the string.
     ///
-    /// Decomposes the string into individual path components by parsing it as a file URL and extracting its path
-    /// components. Empty components and root separators are filtered out.
+    /// Splits on `/`, filters empty components, and resolves `.` (current directory) and `..` (parent directory)
+    /// segments. For absolute paths, `..` cannot escape past root.
+    ///
+    /// ## Resolution Rules
+    /// - `.` components are removed
+    /// - `..` removes the preceding component, or is preserved for relative paths with no parent to consume
+    /// - `..` is dropped for absolute paths when already at root
     ///
     /// - Complexity: O(n) where n is the length of the path string
     var pathComponents: [String] {
-        self.split(separator: "/", omittingEmptySubsequences: true).map { String($0) }
+        let isAbsolute = first == "/"
+        let raw = self.split(separator: "/", omittingEmptySubsequences: true).map { String($0) }
+        var result: [String] = []
+        for component in raw {
+            resolve(component, into: &result, isAbsolute: isAbsolute)
+        }
+        return result
     }
 
-    /// The last path component, or `nil` if the path is empty.
+    /// The last resolved path component, or `nil` if the path is empty.
     ///
-    /// Extracts the final component from the path, typically representing a filename or the deepest directory name.
+    /// Extracts the final component after `.` and `..` resolution. Typically represents a filename or the deepest
+    /// directory name. Returns `nil` for paths that resolve to empty (e.g. `"."`, `"a/.."`).
     var lastPathComponent: String? {
         pathComponents.last
     }
 
-    /// The path with the last component removed.
+    /// The path with the last resolved component removed.
     ///
-    /// Creates a new path by removing the final component. For absolute paths (beginning with '/'), the result remains
-    /// absolute. For relative paths, the result remains relative.
+    /// Removes the final component after `.` and `..` resolution. Absolute paths remain absolute; relative paths
+    /// remain relative. A single-component path produces an empty string (or `/` for absolute paths).
     ///
-    /// - Note: If the path contains only one component, an empty string or root path is produced
     /// - Complexity: O(n) where n is the length of the path string
     var removingLastPathComponent: String {
         var pcs = pathComponents
@@ -87,19 +112,20 @@ public extension String {
         return first == "/" ? pcs.rootPath : pcs.path
     }
 
-    /// Appends a path component to create a new path.
+    /// Appends a path component, resolving `.` and `..` contextually against the base.
     ///
-    /// Adds the specified component to the end of the current path. For absolute paths (beginning with '/'), the result
-    /// remains absolute. The component itself is parsed for additional path separators.
+    /// The appended component is parsed and resolved: `..` segments pop components from the base path. For absolute
+    /// paths, `..` cannot escape past root.
     ///
-    /// - Parameter pc: The path component to append
+    /// - Parameter pc: The path component to append (may contain `/` separators, `.`, and `..`)
     /// - Complexity: O(n + m) where n is the current path length and m is the component length
     func appendingPathComponent(_ pc: String) -> String {
-        let a = pathComponents
-        let b = pc.pathComponents
-        let sum = a + b
-
-        return first == "/" ? sum.rootPath : sum.path
+        let isAbsolute = first == "/"
+        var comps = pathComponents
+        for component in pc.pathComponents {
+            resolve(component, into: &comps, isAbsolute: isAbsolute)
+        }
+        return isAbsolute ? comps.rootPath : comps.path
     }
 
     /// Appends multiple path components to create a new path.
@@ -143,18 +169,15 @@ public extension String {
     /// The path decomposed into directory, base name, and extension components.
     ///
     /// Extracts all three major components of a file path: the containing directory, the base filename, and the file
-    /// extension.
-    ///
-    /// ## Error Conditions
-    /// - Triggers `fatalError` if the path contains no filename component
+    /// extension. Returns `nil` if the path resolves to empty (e.g. `"."`).
     ///
     /// - Complexity: O(n) where n is the length of the path string
     var directoryBaseNameAndExtensionFromPath:
-        (directory: String, baseName: String, extension: String) {
+        (directory: String, baseName: String, extension: String)? {
         let d = self.removingLastPathComponent
 
         guard let file = self.lastPathComponent, !file.isEmpty else {
-            fatalError("No file: \(self)")
+            return nil
         }
 
         let (b, e) = file.separateExtension
@@ -199,31 +222,38 @@ public extension String {
 
     /// A path relative to the specified base path.
     ///
-    /// Computes the relative path by removing common leading components between the current path and the base path. If
-    /// paths don't share common components, the original path is preserved.
+    /// Computes the relative path by stripping common leading components and generating `..` ascent sequences for the
+    /// remaining base components. Returns `self` when mixing absolute and relative paths.
     ///
     /// - Parameter basePath: The base path to compute relativity against
-    /// - Complexity: O(min(n, m)) where n and m are the component counts of both paths
+    /// - Complexity: O(n + m) where n and m are the component counts of both paths
     func relative(to basePath: String) -> String {
-        var fullPathComps = pathComponents
-        var basePathComps = basePath.pathComponents
+        let selfIsAbsolute = first == "/"
+        let baseIsAbsolute = basePath.first == "/"
 
-        guard fullPathComps.first == basePathComps.first else {
+        guard selfIsAbsolute == baseIsAbsolute else {
             return self
         }
 
-        while let fc = fullPathComps.first, let bc = basePathComps.first, fc == bc {
-            fullPathComps.removeFirst()
-            basePathComps.removeFirst()
+        let fullPathComps = pathComponents
+        let basePathComps = basePath.pathComponents
+
+        var commonCount = 0
+        let minCount = min(fullPathComps.count, basePathComps.count)
+        while commonCount < minCount && fullPathComps[commonCount] == basePathComps[commonCount] {
+            commonCount += 1
         }
 
-        return fullPathComps.path
+        let upCount = basePathComps.count - commonCount
+        let remaining = Array(fullPathComps[commonCount...])
+
+        return (Array(repeating: "..", count: upCount) + remaining).path
     }
 
     /// Determines path equality with configurable case sensitivity.
     ///
-    /// Compares two file paths by decomposing them into components and comparing hash values. Case sensitivity can be
-    /// controlled for file systems that are case-insensitive.
+    /// Compares two file paths by resolving `.` and `..` segments, then checking component-wise equality. Paths that
+    /// resolve to the same components are considered equal regardless of syntactic differences.
     ///
     /// - Parameters:
     ///   - other: The path to compare against
