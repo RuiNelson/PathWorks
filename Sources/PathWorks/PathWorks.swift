@@ -3,13 +3,16 @@ import Foundation
 private func resolve(_ component: String, into result: inout [String], isAbsolute: Bool) {
     if component == "." {
         return
-    } else if component == ".." {
+    }
+    else if component == ".." {
         if let last = result.last, last != ".." {
             result.removeLast()
-        } else if !isAbsolute {
+        }
+        else if !isAbsolute {
             result.append(component)
         }
-    } else {
+    }
+    else {
         result.append(component)
     }
 }
@@ -20,6 +23,8 @@ public extension [String] {
     /// Joins array elements using Unix path separators ("/") to create a hierarchical file path structure. Empty arrays
     /// produce empty strings.
     ///
+    /// Empty components are skipped, so no separator is ever doubled: `["a", "", "b"].path` is `"a/b"`, not `"a//b"`.
+    ///
     /// - Note: Uses Unix-style separators regardless of platform
     /// - Complexity: O(n) where n is the total character count of all components
     var path: String {
@@ -27,13 +32,15 @@ public extension [String] {
             return String()
         }
 
-        return joined(separator: "/")
+        return filter { !$0.isEmpty }.joined(separator: "/")
     }
 
     /// A Windows-style file system path using backslash separators.
     ///
     /// Creates file paths compatible with Microsoft Windows file systems by joining components with backslash
     /// characters ("\\"). Empty arrays produce empty strings.
+    ///
+    /// Empty components are skipped, so no separator is ever doubled: `["a", "", "b"].backslashPath` is `"a\\b"`.
     ///
     /// - Note: Primarily useful for Windows compatibility or generating Windows-specific file references
     /// - Complexity: O(n) where n is the total character count of all components
@@ -42,13 +49,15 @@ public extension [String] {
             return String()
         }
 
-        return joined(separator: "\\")
+        return filter { !$0.isEmpty }.joined(separator: "\\")
     }
 
     /// An absolute file system path with a root separator.
     ///
     /// Creates an absolute path by prepending a leading slash to the relative path representation, indicating the path
     /// starts from the file system root.
+    ///
+    /// Empty components are skipped, as they are for ``path``. An array with no non-empty components yields `"/"`.
     ///
     /// - Complexity: O(n) where n is the total character count of all components
     var rootPath: String {
@@ -59,6 +68,9 @@ public extension [String] {
     ///
     /// Creates an absolute path using Microsoft's backslash convention by prepending a leading backslash to the
     /// relative backslash path representation.
+    ///
+    /// Empty components are skipped, as they are for ``backslashPath``. An array with no non-empty components yields
+    /// `"\\"`.
     ///
     /// - Complexity: O(n) where n is the total character count of all components
     var rootPathBackslash: String {
@@ -98,8 +110,8 @@ public extension String {
 
     /// The path with the last resolved component removed.
     ///
-    /// Removes the final component after `.` and `..` resolution. Absolute paths remain absolute; relative paths
-    /// remain relative. A single-component path produces an empty string (or `/` for absolute paths).
+    /// Removes the final component after `.` and `..` resolution. Absolute paths remain absolute; relative paths remain
+    /// relative. A single-component path produces an empty string (or `/` for absolute paths).
     ///
     /// - Complexity: O(n) where n is the length of the path string
     var removingLastPathComponent: String {
@@ -114,16 +126,22 @@ public extension String {
 
     /// Appends a path component, resolving `.` and `..` contextually against the base.
     ///
-    /// The appended component is parsed and resolved: `..` segments pop components from the base path. For absolute
-    /// paths, `..` cannot escape past root.
+    /// The appended component is split on `/` and each segment is resolved against the base: `..` segments pop
+    /// components from the base path. For absolute paths, `..` cannot escape past root.
+    ///
+    /// ## Edge Cases
+    /// - A leading `/` on `pc` is ignored: `pc` is always treated as relative to the base, so
+    ///   `"a/b".appendingPathComponent("/../c")` is `"a/c"`, exactly as `"../c"` would be
+    /// - When the base is empty, absoluteness is taken from `pc` instead, so `"".appendingPathComponent("/etc")` is
+    /// `"/etc"` while `"".appendingPathComponent("etc")` is `"etc"`
     ///
     /// - Parameter pc: The path component to append (may contain `/` separators, `.`, and `..`)
     /// - Complexity: O(n + m) where n is the current path length and m is the component length
     func appendingPathComponent(_ pc: String) -> String {
-        let isAbsolute = first == "/"
+        let isAbsolute = isEmpty ? pc.first == "/" : first == "/"
         var comps = pathComponents
-        for component in pc.pathComponents {
-            resolve(component, into: &comps, isAbsolute: isAbsolute)
+        for component in pc.split(separator: "/", omittingEmptySubsequences: true) {
+            resolve(String(component), into: &comps, isAbsolute: isAbsolute)
         }
         return isAbsolute ? comps.rootPath : comps.path
     }
@@ -145,25 +163,30 @@ public extension String {
 
     /// The filename separated into base name and extension.
     ///
-    /// Splits the string at the last period (.) to extract the base name and file extension. If no extension exists,
-    /// the extension component is `nil`.
+    /// Splits the string at the last period (.) to extract the base name and file extension. Every other character is
+    /// preserved verbatim, so `base + "." + ext` always reconstructs the original string. If no extension exists, the
+    /// extension component is `nil`.
     ///
     /// ## Edge Cases
-    /// - Files without extensions result in `(originalString, nil)`
-    /// - Files starting with a period are treated as having no extension
+    /// - Files without a period result in `(originalString, nil)`
+    /// - Files starting with a period are treated as having no extension: `".hidden"` → `(".hidden", nil)`
+    /// - A trailing period is an empty extension, not an extension: `"abc."` → `("abc.", nil)`
+    /// - Interior periods are kept in the base name: `"a..b"` → `("a.", "b")`
     ///
     /// - Complexity: O(n) where n is the length of the filename
     var separateExtension: (base: String, ext: String?) {
-        var parts = self.split(separator: ".").map { String($0) }
-
-        guard parts.count >= 2 else {
+        guard let separator = lastIndex(of: ".") else {
             return (self, nil)
         }
 
-        let ext = parts.removeLast()
-        let base = parts.joined(separator: ".")
+        let extensionStart = index(after: separator)
 
-        return (base, ext)
+        // A leading period marks a hidden file and a trailing period yields an empty extension; neither is one.
+        guard separator != startIndex, extensionStart != endIndex else {
+            return (self, nil)
+        }
+
+        return (String(self[startIndex ..< separator]), String(self[extensionStart...]))
     }
 
     /// The path decomposed into directory, base name, and extension components.
@@ -193,6 +216,11 @@ public extension String {
     /// ## Edge Cases
     /// - Empty strings produce empty arrays
     /// - Single-component paths produce arrays containing only that path
+    /// - Paths that resolve to nothing produce empty arrays (e.g. `"."`, `"a/.."`)
+    /// - A root-only path produces `["/"]`, which is not a directory a caller can create
+    /// - Relative paths that ascend above the current directory keep their `..` prefix, so entries look like
+    ///   `["..", "../a"]`; callers that feed this list to a directory-creation routine must be prepared for
+    ///   `..`-prefixed and root entries
     ///
     /// - Complexity: O(n²) where n is the number of path components
     var intermediaryPaths: [String] {
@@ -201,15 +229,15 @@ public extension String {
         }
 
         let isRoot = first == "/"
+        let comps = pathComponents
 
-        let finalPath = isRoot ? pathComponents.rootPath : pathComponents.path
-
-        var paths: [String] = [finalPath]
-
-        var previousPath = pathComponents
-        guard !previousPath.isEmpty else {
+        guard !comps.isEmpty else {
             return isRoot ? ["/"] : []
         }
+
+        var paths: [String] = [isRoot ? comps.rootPath : comps.path]
+
+        var previousPath = comps
         previousPath.removeLast()
 
         while !previousPath.isEmpty {
@@ -224,6 +252,13 @@ public extension String {
     ///
     /// Computes the relative path by stripping common leading components and generating `..` ascent sequences for the
     /// remaining base components. Returns `self` when mixing absolute and relative paths.
+    ///
+    /// ## Edge Cases
+    /// - When the two paths are equivalent the result is `"."`, never the empty string, so the return value is always a
+    /// usable relative path
+    /// - Returns `self` unchanged when the base ascends above the current directory past the common prefix — i.e. when
+    /// the base components left after the common prefix still contain `..`, as in `"a".relative(to: "../b")`. The true
+    /// answer would require knowing the current directory's own name, which a path string does not carry
     ///
     /// - Parameter basePath: The base path to compute relativity against
     /// - Complexity: O(n + m) where n and m are the component counts of both paths
@@ -244,16 +279,27 @@ public extension String {
             commonCount += 1
         }
 
-        let upCount = basePathComps.count - commonCount
-        let remaining = Array(fullPathComps[commonCount...])
+        let ascent = basePathComps[commonCount...]
 
-        return (Array(repeating: "..", count: upCount) + remaining).path
+        guard !ascent.contains("..") else {
+            return self
+        }
+
+        let remaining = Array(fullPathComps[commonCount...])
+        let relativePath = (Array(repeating: "..", count: ascent.count) + remaining).path
+
+        return relativePath.isEmpty ? "." : relativePath
     }
 
     /// Determines path equality with configurable case sensitivity.
     ///
     /// Compares two file paths by resolving `.` and `..` segments, then checking component-wise equality. Paths that
     /// resolve to the same components are considered equal regardless of syntactic differences.
+    ///
+    /// ## Edge Cases
+    /// - A leading `/` is not part of the comparison, so an absolute path and its relative counterpart compare equal:
+    ///   `"/etc/passwd".samePath(otherPath: "etc/passwd", caseSensitive: true)` is `true`. Check the leading `/`
+    ///   separately when the distinction matters
     ///
     /// - Parameters:
     ///   - other: The path to compare against
@@ -269,8 +315,12 @@ public extension String {
 
 // MARK: - NTFS
 
-private let point = "."
+private let point: Character = "."
 private let ntfsForbiddenCharacters: [String] = #"<>:"/\|?*"#.map { String($0) }
+/// The forbidden literals indexed for constant-time membership tests.
+private let ntfsForbiddenCharacterSet = Set(ntfsForbiddenCharacters.compactMap(\.first))
+/// The stand-in used when sanitizing removes every character of a filename.
+private let ntfsPlaceholderFilename = "_"
 private let ntfsReservedFilenames = [
     "CON",
     "PRN",
@@ -296,60 +346,89 @@ private let ntfsReservedFilenames = [
     "LPT9",
 ]
 
+/// Whether NTFS rejects `character`: either a forbidden literal or a control character in U+0000...U+001F.
+private func isForbiddenForNTFS(_ character: Character) -> Bool {
+    if ntfsForbiddenCharacterSet.contains(character) {
+        return true
+    }
+
+    return character.unicodeScalars.contains { $0.value <= 0x1F }
+}
+
+/// Whether the segment before the first period of `filename` names a reserved NTFS device.
+private func isNTFSReservedDeviceName(_ filename: Substring) -> Bool {
+    ntfsReservedFilenames.contains(filename.uppercased())
+}
+
 public extension String {
     /// A filename safe for use on NTFS file systems.
     ///
-    /// Converts the string into a valid NTFS filename by replacing forbidden characters with periods and handling
-    /// reserved filenames. Trailing whitespace is removed.
+    /// Converts the string into a valid NTFS filename by replacing forbidden characters with periods and escaping
+    /// reserved device names. The result is never empty.
     ///
     /// ## NTFS Restrictions
     /// - Forbidden characters: `< > : " / \ | ? *`
+    /// - Forbidden control characters: U+0000 through U+001F
     /// - Reserved names: CON, PRN, AUX, NUL, COM1-9, LPT1-9
+    /// - Names may not end in whitespace or a period
     ///
     /// ## Transformations
-    /// - Reserved filenames are wrapped with underscores: `"CON"` → `"_CON_"`
-    /// - Forbidden characters are replaced with periods
+    /// - Forbidden characters, control characters included, are replaced with periods
+    /// - Trailing whitespace and trailing periods are removed: `"abc.   "` → `"abc"`
+    /// - Reserved device names are wrapped with underscores: `"CON"` → `"_CON_"`
+    /// - Only the segment before the *first* period is matched and wrapped: `"CON.tar.gz"` → `"_CON_.tar.gz"`
+    /// - A name that sanitizes to nothing, or the empty string, falls back to `"_"`: `"..."` → `"_"`
     ///
-    /// - Complexity: O(n × m) where n is the filename length and m is the number of forbidden characters
+    /// - Complexity: O(n) where n is the filename length
     var safeFilenameForNTFS: String {
         guard !isSafeFilenameForNTFS else {
             return self
         }
 
-        var copy = self
+        var copy = String()
+        copy.reserveCapacity(count)
 
-        for character in ntfsForbiddenCharacters {
-            copy = copy.replacingOccurrences(of: character, with: point)
+        for character in self {
+            copy.append(isForbiddenForNTFS(character) ? point : character)
         }
 
-        while let last = copy.last, last.isWhitespace || last == "." {
+        while let last = copy.last, last.isWhitespace || last == point {
             copy = String(copy.dropLast())
         }
 
-        let (baseName, ext) = copy.separateExtension
-        if ntfsReservedFilenames.contains(baseName.uppercased()) {
-            copy = "_\(baseName)_" + (ext.map { ".\($0)" } ?? "")
+        guard !copy.isEmpty else {
+            return ntfsPlaceholderFilename
+        }
+
+        let deviceName = copy.prefix { $0 != point }
+        if isNTFSReservedDeviceName(deviceName) {
+            copy = "_\(deviceName)_\(copy.dropFirst(deviceName.count))"
         }
 
         return copy
     }
 
+    /// A Boolean value indicating whether the string is already a valid NTFS filename.
+    ///
+    /// Returns `true` only when ``safeFilenameForNTFS`` would leave the string untouched: it is not empty, contains no
+    /// forbidden or control characters, does not end in whitespace or a period, and the segment before its first period
+    /// is not a reserved device name.
+    ///
+    /// - Note: The empty string is never safe, since a filename needs at least one character.
+    /// - Complexity: O(n) where n is the filename length
     var isSafeFilenameForNTFS: Bool {
-        if let last, last.isWhitespace || last == "." {
+        guard let last else {
             return false
         }
 
-        for character in ntfsForbiddenCharacters {
-            if contains(character) {
-                return false
-            }
-        }
-
-        let (baseName, _) = separateExtension
-        if ntfsReservedFilenames.contains(baseName.uppercased()) {
+        if last.isWhitespace || last == point {
             return false
         }
 
-        return true
+        if contains(where: isForbiddenForNTFS) {
+            return false
+        }
+
+        return !isNTFSReservedDeviceName(prefix { $0 != point })
     }
 }

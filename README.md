@@ -59,12 +59,18 @@ Then add `"PathWorks"` to your target's dependencies:
 
 `appendingPathComponent` resolves `.` and `..` contextually against the base path.
 
+A leading `/` on the appended component is ignored — the component is always treated as relative to the base, and it does not change how `..` resolves. When the base is empty, absoluteness comes from the component instead.
+
 ```swift
 "/Users".appendingPathComponent("me")            // "/Users/me"
 "ab/cd/".appendingPathComponent("ef")            // "ab/cd/ef"
 "a/b".appendingPathComponent("..")               // "a"
 "a/b".appendingPathComponent("../c")             // "a/c"
+"a/b".appendingPathComponent("/../c")            // "a/c"  (leading / ignored)
 "/a/b".appendingPathComponent("../../c")         // "/c"
+"a/b/".appendingPathComponent("/c/d")            // "a/b/c/d"
+"".appendingPathComponent("etc")                 // "etc"
+"".appendingPathComponent("/etc")                // "/etc"  (empty base takes / from the component)
 "/var".appendingPathComponents(["log", "app"])   // "/var/log/app"
 ```
 
@@ -79,9 +85,23 @@ Then add `"PathWorks"` to your target's dependencies:
 
 ### Split filename into base + extension
 
+Splits at the last `.` and keeps every other character, so `base + "." + ext` always rebuilds the original name.
+
 ```swift
 "archive.tar.gz".separateExtension
 // (base: "archive.tar", ext: "gz")
+
+".hidden.txt".separateExtension
+// (base: ".hidden", ext: "txt")   — the leading dot stays in the base name
+
+".hidden".separateExtension
+// (base: ".hidden", ext: nil)     — a lone leading dot is not an extension separator
+
+"abc.".separateExtension
+// (base: "abc.", ext: nil)        — a trailing dot is an empty extension, so there is none
+
+"a..b".separateExtension
+// (base: "a.", ext: "b")          — interior dots are preserved
 ```
 
 ### Get every intermediate path
@@ -93,32 +113,50 @@ Then add `"PathWorks"` to your target's dependencies:
 
 ### Make a path relative to another
 
-Generates `..` ascent sequences for the remaining base components. Returns `self` when mixing absolute and relative paths.
+Generates `..` ascent sequences for the remaining base components. Equivalent paths yield `"."`, never an empty string.
+
+`self` is returned unchanged in two cases: when mixing absolute and relative paths, and when the base ascends above the current directory past the common prefix — the correct answer there would require knowing the current directory's own name, which a path string does not carry.
 
 ```swift
 "/a/b/c/d".relative(to: "/a/b")                 // "c/d"
 "a/b/c".relative(to: "a/b/c/d")                 // ".."
 "a/b/x".relative(to: "a/b/c")                   // "../x"
 "a".relative(to: "b")                            // "../a"
+"a/b".relative(to: "a/b")                       // "."  (equivalent paths)
+"../a".relative(to: "../b")                     // "../a"  (shared .. prefix is fine)
 "/a/b".relative(to: "x/y")                      // "/a/b"  (mixed absolute/relative)
+"a".relative(to: "../b")                        // "a"  (base ascends above the current directory)
 ```
 
 ### Compare paths (with optional case‑sensitivity)
 
 Comparison uses resolved components, so syntactically different but semantically equal paths match.
 
+A leading `/` is not part of the comparison, so an absolute path and its relative counterpart compare equal. Check the leading `/` separately when that distinction matters.
+
 ```swift
 "/Users/Me".samePath(otherPath: "/users/me", caseSensitive: false)  // true
 "/Users/Me".samePath(otherPath: "/Users/Me", caseSensitive: true)   // true
 "a/b/c".samePath(otherPath: "a/b/x/../c", caseSensitive: true)      // true
+"/etc/passwd".samePath(otherPath: "etc/passwd", caseSensitive: true) // true  (leading / not considered)
 ```
 
 ### Sanitize filenames for NTFS
 
+Forbidden characters (`< > : " / \ | ? *` and the control characters U+0000–U+001F) become periods, trailing
+whitespace and periods are stripped, and reserved device names are wrapped in underscores. The result is never empty:
+a name that sanitizes to nothing falls back to `"_"`.
+
 ```swift
 "report?:final.txt".safeFilenameForNTFS   // "report.final.txt"
 "CON".safeFilenameForNTFS                 // "_CON_"
+"CON.tar.gz".safeFilenameForNTFS          // "_CON_.tar.gz"  (matched before the first ".")
+"abc.   ".safeFilenameForNTFS             // "abc"           (trailing whitespace and dots removed)
+"...".safeFilenameForNTFS                 // "_"             (never returns an empty string)
+"".safeFilenameForNTFS                    // "_"
+
 "file.txt".isSafeFilenameForNTFS          // true
+"".isSafeFilenameForNTFS                  // false
 ```
 
 ---
