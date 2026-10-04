@@ -316,6 +316,7 @@ public extension String {
 // MARK: - NTFS
 
 private let point: Character = "."
+private let space: Character = " "
 private let ntfsForbiddenCharacters: [String] = #"<>:"/\|?*"#.map { String($0) }
 /// The forbidden literals indexed for constant-time membership tests.
 private let ntfsForbiddenCharacterSet = Set(ntfsForbiddenCharacters.compactMap(\.first))
@@ -346,6 +347,9 @@ private let ntfsReservedFilenames = [
     "LPT9",
 ]
 
+/// Maximum filename length on NTFS: 255 UTF-16 code units (`NTFS_MAX_NAME_LEN`).
+private let ntfsMaxFilenameLengthUTF16 = 255
+
 /// Whether NTFS rejects `character`: either a forbidden literal or a control character in U+0000...U+001F.
 private func isForbiddenForNTFS(_ character: Character) -> Bool {
     if ntfsForbiddenCharacterSet.contains(character) {
@@ -360,6 +364,28 @@ private func isNTFSReservedDeviceName(_ filename: Substring) -> Bool {
     ntfsReservedFilenames.contains(filename.uppercased())
 }
 
+/// The longest prefix of `string` fitting in `limit` UTF-16 code units, never splitting a `Character`.
+private func truncateForNTFSLength(_ string: String, limit: Int = ntfsMaxFilenameLengthUTF16) -> String {
+    guard string.utf16.count > limit else {
+        return string
+    }
+
+    var result = String()
+    result.reserveCapacity(min(string.count, limit))
+
+    var used = 0
+    for character in string {
+        let width = character.unicodeScalars.reduce(0) { $0 + ($1.value >= 0x10000 ? 2 : 1) }
+        if used + width > limit {
+            break
+        }
+        result.append(character)
+        used += width
+    }
+
+    return result
+}
+
 public extension String {
     /// A filename safe for use on NTFS file systems.
     ///
@@ -370,11 +396,11 @@ public extension String {
     /// - Forbidden characters: `< > : " / \ | ? *`
     /// - Forbidden control characters: U+0000 through U+001F
     /// - Reserved names: CON, PRN, AUX, NUL, COM1-9, LPT1-9
-    /// - Names may not end in whitespace or a period
+    /// - Names may not end in a space (U+0020) or a period (U+002E)
     ///
     /// ## Transformations
     /// - Forbidden characters, control characters included, are replaced with periods
-    /// - Trailing whitespace and trailing periods are removed: `"abc.   "` → `"abc"`
+    /// - Trailing spaces and trailing periods are removed: `"abc.   "` → `"abc"`
     /// - Reserved device names are wrapped with underscores: `"CON"` → `"_CON_"`
     /// - Only the segment before the *first* period is matched and wrapped: `"CON.tar.gz"` → `"_CON_.tar.gz"`
     /// - A name that sanitizes to nothing, or the empty string, falls back to `"_"`: `"..."` → `"_"`
@@ -392,7 +418,7 @@ public extension String {
             copy.append(isForbiddenForNTFS(character) ? point : character)
         }
 
-        while let last = copy.last, last.isWhitespace || last == point {
+        while let last = copy.last, last == space || last == point {
             copy = String(copy.dropLast())
         }
 
@@ -411,7 +437,7 @@ public extension String {
     /// A Boolean value indicating whether the string is already a valid NTFS filename.
     ///
     /// Returns `true` only when ``safeFilenameForNTFS`` would leave the string untouched: it is not empty, contains no
-    /// forbidden or control characters, does not end in whitespace or a period, and the segment before its first period
+    /// forbidden or control characters, does not end in a space or a period, and the segment before its first period
     /// is not a reserved device name.
     ///
     /// - Note: The empty string is never safe, since a filename needs at least one character.
@@ -421,7 +447,7 @@ public extension String {
             return false
         }
 
-        if last.isWhitespace || last == point {
+        if last == space || last == point {
             return false
         }
 
@@ -430,5 +456,60 @@ public extension String {
         }
 
         return !isNTFSReservedDeviceName(prefix { $0 != point })
+    }
+
+    /// A Boolean value indicating whether the string is a valid NTFS filename including the length limit.
+    ///
+    /// Returns `true` only when ``isSafeFilenameForNTFS`` is `true` and the name fits in 255 UTF-16 code units
+    /// (`NTFS_MAX_NAME_LEN`).
+    ///
+    /// - Complexity: O(n) where n is the filename length
+    var isSafeFilenameForNTFSIncludingLength: Bool {
+        guard isSafeFilenameForNTFS else {
+            return false
+        }
+
+        return utf16.count <= ntfsMaxFilenameLengthUTF16
+    }
+
+    /// A filename safe for use on NTFS file systems, including the length limit.
+    ///
+    /// Starts from ``safeFilenameForNTFS`` and, only when it exceeds 255 UTF-16 code units, truncates it on a
+    /// `Character` boundary so no grapheme (and therefore no surrogate pair) is split. A cut that exposes trailing
+    /// spaces or periods trims them, and an empty result falls back to `"_"`. The result always satisfies
+    /// ``isSafeFilenameForNTFSIncludingLength`` and the function is idempotent.
+    ///
+    /// - Complexity: O(n) where n is the filename length
+    var safeNameForNTFSIncludingLength: String {
+        let safe = safeFilenameForNTFS
+
+        guard safe.utf16.count > ntfsMaxFilenameLengthUTF16 else {
+            return safe
+        }
+
+        var truncated = truncateForNTFSLength(safe)
+
+        while let last = truncated.last, last == space || last == point {
+            truncated.removeLast()
+        }
+
+        guard !truncated.isEmpty else {
+            return ntfsPlaceholderFilename
+        }
+
+        // Truncation keeps the leading device segment, so a 255-long result cannot turn reserved. Re-validate
+        // defensively: wrapping would add 2 units and could exceed the limit again.
+        let resanitized = truncated.safeFilenameForNTFS
+        guard resanitized.utf16.count > ntfsMaxFilenameLengthUTF16 else {
+            return resanitized
+        }
+
+        var refitted = truncateForNTFSLength(resanitized)
+
+        while let last = refitted.last, last == space || last == point {
+            refitted.removeLast()
+        }
+
+        return refitted.isEmpty ? ntfsPlaceholderFilename : refitted
     }
 }
