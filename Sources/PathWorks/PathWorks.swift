@@ -317,9 +317,16 @@ public extension String {
 
 private let point: Character = "."
 private let space: Character = " "
-private let ntfsForbiddenCharacters: [String] = #"<>:"/\|?*"#.map { String($0) }
-/// The forbidden literals indexed for constant-time membership tests.
-private let ntfsForbiddenCharacterSet = Set(ntfsForbiddenCharacters.compactMap(\.first))
+/// Forbidden scalars for NTFS: `< > : " / \ | ? *` plus controls U+0000...U+001F.
+/// Backed by `Foundation.CharacterSet` (bitmap lookup) instead of a `Set<Character>`.
+private let ntfsForbiddenCharacterSet: CharacterSet = {
+    var set = CharacterSet(charactersIn: "<>:\"/\\|?*")
+    set.formUnion(CharacterSet(charactersIn: Unicode.Scalar(0)! ... Unicode.Scalar(0x1F)!))
+    return set
+}()
+
+/// The scalar written in place of every forbidden scalar when sanitizing.
+private let ntfsDotScalar = Unicode.Scalar(0x2E)!
 /// The stand-in used when sanitizing removes every character of a filename.
 private let ntfsPlaceholderFilename = "_"
 private let ntfsReservedFilenames = [
@@ -350,13 +357,9 @@ private let ntfsReservedFilenames = [
 /// Maximum filename length on NTFS: 255 UTF-16 code units (`NTFS_MAX_NAME_LEN`).
 private let ntfsMaxFilenameLengthUTF16 = 255
 
-/// Whether NTFS rejects `character`: either a forbidden literal or a control character in U+0000...U+001F.
-private func isForbiddenForNTFS(_ character: Character) -> Bool {
-    if ntfsForbiddenCharacterSet.contains(character) {
-        return true
-    }
-
-    return character.unicodeScalars.contains { $0.value <= 0x1F }
+/// Whether NTFS rejects `scalar`: either a forbidden literal or a control character in U+0000...U+001F.
+private func isForbiddenForNTFS(_ scalar: Unicode.Scalar) -> Bool {
+    ntfsForbiddenCharacterSet.contains(scalar)
 }
 
 /// Whether the segment before the first period of `filename` names a reserved NTFS device.
@@ -411,12 +414,14 @@ public extension String {
             return self
         }
 
-        var copy = String()
-        copy.reserveCapacity(count)
+        var scalars = String.UnicodeScalarView()
+        scalars.reserveCapacity(unicodeScalars.count)
 
-        for character in self {
-            copy.append(isForbiddenForNTFS(character) ? point : character)
+        for scalar in unicodeScalars {
+            scalars.append(isForbiddenForNTFS(scalar) ? ntfsDotScalar : scalar)
         }
+
+        var copy = String(scalars)
 
         while let last = copy.last, last == space || last == point {
             copy = String(copy.dropLast())
@@ -451,7 +456,7 @@ public extension String {
             return false
         }
 
-        if contains(where: isForbiddenForNTFS) {
+        if rangeOfCharacter(from: ntfsForbiddenCharacterSet) != nil {
             return false
         }
 
