@@ -46,7 +46,8 @@ public extension [String] {
     /// Joins array elements using Unix path separators ("/") to create a hierarchical file path structure. Empty arrays
     /// produce empty strings.
     ///
-    /// Empty components are skipped, so no separator is ever doubled: `["a", "", "b"].path` is `"a/b"`, not `"a//b"`.
+    /// Empty components are skipped, so an empty element never doubles a separator: `["a", "", "b"].path` is `"a/b"`,
+    /// not `"a//b"`. Other elements are joined verbatim, separators included: `["a/", "b"].path` is `"a//b"`.
     ///
     /// - Note: Uses Unix-style separators regardless of platform
     /// - Complexity: O(n) where n is the total character count of all components
@@ -63,7 +64,8 @@ public extension [String] {
     /// Creates file paths compatible with Microsoft Windows file systems by joining components with backslash
     /// characters ("\\"). Empty arrays produce empty strings.
     ///
-    /// Empty components are skipped, so no separator is ever doubled: `["a", "", "b"].backslashPath` is `"a\\b"`.
+    /// Empty components are skipped, so an empty element never doubles a separator: `["a", "", "b"].backslashPath` is
+    /// `"a\\b"`. Other elements are joined verbatim, separators included: `["a\\", "b"].backslashPath` is `"a\\\\b"`.
     ///
     /// - Note: Primarily useful for Windows compatibility or generating Windows-specific file references
     /// - Complexity: O(n) where n is the total character count of all components
@@ -545,8 +547,8 @@ public extension String {
             return ntfsPlaceholderFilename
         }
 
-        // Truncation keeps the leading device segment, so a 255-long result cannot turn reserved. Re-validate
-        // defensively: wrapping would add 2 units and could exceed the limit again.
+        // Truncation and trimming can expose a reserved device name: "CON", 252 spaces and "x" is cut before the "x"
+        // and trimmed to "CON". Re-sanitize, then refit, since wrapping adds 2 units and could exceed the limit again.
         let resanitized = truncated.safeFilenameForNTFS
         guard resanitized.utf16.count > ntfsMaxFilenameLengthUTF16 else {
             return resanitized

@@ -373,6 +373,19 @@ struct PathWorksTests {
         #expect("/b/\(nfd)/x".relative(to: "/b/\(nfc)").unicodeScalars.elementsEqual("../\(nfd)/x".unicodeScalars))
     }
 
+    @Test func documentedEdgeCasesOfJoiningAndTruncation() {
+        // Only empty elements are skipped; separators inside elements are joined verbatim
+        #expect(["a/", "b"].path == "a//b")
+        #expect(["/a"].rootPath == "//a")
+        #expect(["a\\", "b"].backslashPath == "a\\\\b")
+
+        // Truncating to 255 UTF-16 units and trimming can expose a reserved device name, which is then wrapped
+        let exposesDevice = "CON" + String(repeating: " ", count: 252) + "x"
+        #expect(exposesDevice.isSafeFilenameForNTFS)
+        #expect(!exposesDevice.isSafeFilenameForNTFSIncludingLength)
+        #expect(exposesDevice.safeNameForNTFSIncludingLength == "_CON_")
+    }
+
     @Test func parentOfAscendingPaths() {
         // The parent of a path made only of ".." ascents is one more ascent, not a directory below it
         #expect("..".removingLastPathComponent == "../..")
