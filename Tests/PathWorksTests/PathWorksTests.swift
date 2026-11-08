@@ -325,4 +325,33 @@ struct PathWorksTests {
             #expect((base + (ext.map { ".\($0)" } ?? "")).unicodeScalars.elementsEqual(name.unicodeScalars))
         }
     }
+
+    @Test func ntfsPeriodsAndSpacesFusedIntoGraphemes() {
+        // U+0600 fuses with the trailing "." or " " into one Character, but the name still ends in that scalar
+        #expect(!"a\u{600}.".isSafeFilenameForNTFS)
+        #expect(!"a\u{600} ".isSafeFilenameForNTFS)
+        #expect("a\u{600}.".safeFilenameForNTFS == "a\u{600}")
+        #expect("a\u{600} . ".safeFilenameForNTFS == "a\u{600}")
+
+        // The combining mark fuses with the first "." into one Character, but Windows still sees "CON" before it
+        #expect(!"CON.\u{301}txt".isSafeFilenameForNTFS)
+        #expect("CON.\u{301}txt".safeFilenameForNTFS == "_CON_.\u{301}txt")
+
+        // A combining mark after the final period is not a trailing period
+        #expect("abc.\u{301}".isSafeFilenameForNTFS)
+
+        for input in ["a\u{600}.", "a\u{600} ", "CON.\u{301}txt", "\u{600}.", "x\u{600}:."] {
+            let sanitized = input.safeFilenameForNTFS
+            #expect(!sanitized.isEmpty)
+            #expect(sanitized.isSafeFilenameForNTFS)
+            #expect(sanitized.safeFilenameForNTFS == sanitized)
+        }
+
+        // Truncation that ends on a fused "\u{600}." still trims the period
+        let long = String(repeating: "a", count: 253) + "\u{600}.bbb"
+        let fitted = long.safeNameForNTFSIncludingLength
+        #expect(fitted.unicodeScalars.last == "\u{600}")
+        #expect(fitted.isSafeFilenameForNTFSIncludingLength)
+        #expect(fitted.safeNameForNTFSIncludingLength == fitted)
+    }
 }

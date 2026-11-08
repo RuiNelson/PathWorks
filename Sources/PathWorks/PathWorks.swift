@@ -338,8 +338,8 @@ public extension String {
 
 // MARK: - NTFS
 
-private let point: Character = "."
-private let space: Character = " "
+private let point: Unicode.Scalar = "."
+private let space: Unicode.Scalar = " "
 /// Forbidden scalars for NTFS: `< > : " / \ | ? *` plus controls U+0000...U+001F. Backed by `Foundation.CharacterSet`
 /// (bitmap lookup) instead of a `Set<Character>`.
 private let ntfsForbiddenCharacterSet: CharacterSet = {
@@ -348,8 +348,6 @@ private let ntfsForbiddenCharacterSet: CharacterSet = {
     return set
 }()
 
-/// The scalar written in place of every forbidden scalar when sanitizing.
-private let ntfsDotScalar = Unicode.Scalar(0x2E)!
 /// The stand-in used when sanitizing removes every character of a filename.
 private let ntfsPlaceholderFilename = "_"
 private let ntfsReservedFilenames = [
@@ -385,9 +383,27 @@ private func isForbiddenForNTFS(_ scalar: Unicode.Scalar) -> Bool {
     ntfsForbiddenCharacterSet.contains(scalar)
 }
 
-/// Whether the segment before the first period of `filename` names a reserved NTFS device.
-private func isNTFSReservedDeviceName(_ filename: Substring) -> Bool {
-    ntfsReservedFilenames.contains(filename.uppercased())
+/// `scalars` without the trailing spaces and periods that an NTFS name may not end in.
+///
+/// Trims by scalar, not by `Character`: a grapheme can fuse a trailing period or space with a prepended scalar such as
+/// U+0600 (`"\u{600}."` is one `Character`), and the name would still end in that period.
+private func trimmingNTFSTrailingSpacesAndPeriods(_ scalars: String.UnicodeScalarView) -> String.UnicodeScalarView {
+    var scalars = scalars
+    while let last = scalars.last, last == space || last == point {
+        scalars.removeLast()
+    }
+    return scalars
+}
+
+/// The end of the reserved NTFS device name that `scalars` starts with, or `nil` when it starts with none.
+///
+/// The device name is the segment before the first period, found by scalar for the same reason as
+/// ``trimmingNTFSTrailingSpacesAndPeriods(_:)``: in `"CON.\u{301}txt"` the period and the combining mark form one
+/// `Character`, yet Windows still sees `CON` before the first period.
+private func ntfsReservedDeviceNameEnd(in scalars: String.UnicodeScalarView) -> String.UnicodeScalarView.Index? {
+    let end = scalars.firstIndex(of: point) ?? scalars.endIndex
+    let segment = String(String.UnicodeScalarView(scalars[..<end]))
+    return ntfsReservedFilenames.contains(segment.uppercased()) ? end : nil
 }
 
 /// The longest prefix of `string` fitting in `limit` UTF-16 code units, never splitting a `Character`.
@@ -431,6 +447,8 @@ public extension String {
     /// - Only the segment before the *first* period is matched and wrapped: `"CON.tar.gz"` → `"_CON_.tar.gz"`
     /// - A name that sanitizes to nothing, or the empty string, falls back to `"_"`: `"..."` → `"_"`
     ///
+    /// - Note: Periods and spaces are matched by Unicode scalar, as NTFS sees them, so one that a grapheme fuses with a
+    /// neighboring scalar still counts: `"a\u{600}."` → `"a\u{600}"`, `"CON.\u{301}txt"` → `"_CON_.\u{301}txt"`.
     /// - Complexity: O(n) where n is the filename length
     var safeFilenameForNTFS: String {
         guard !isSafeFilenameForNTFS else {
@@ -441,25 +459,21 @@ public extension String {
         scalars.reserveCapacity(unicodeScalars.count)
 
         for scalar in unicodeScalars {
-            scalars.append(isForbiddenForNTFS(scalar) ? ntfsDotScalar : scalar)
+            scalars.append(isForbiddenForNTFS(scalar) ? point : scalar)
         }
 
-        var copy = String(scalars)
+        scalars = trimmingNTFSTrailingSpacesAndPeriods(scalars)
 
-        while let last = copy.last, last == space || last == point {
-            copy = String(copy.dropLast())
-        }
-
-        guard !copy.isEmpty else {
+        guard !scalars.isEmpty else {
             return ntfsPlaceholderFilename
         }
 
-        let deviceName = copy.prefix { $0 != point }
-        if isNTFSReservedDeviceName(deviceName) {
-            copy = "_\(deviceName)_\(copy.dropFirst(deviceName.count))"
+        if let deviceNameEnd = ntfsReservedDeviceNameEnd(in: scalars) {
+            scalars.insert("_", at: deviceNameEnd)
+            scalars.insert("_", at: scalars.startIndex)
         }
 
-        return copy
+        return String(scalars)
     }
 
     /// A Boolean value indicating whether the string is already a valid NTFS filename.
@@ -471,11 +485,7 @@ public extension String {
     /// - Note: The empty string is never safe, since a filename needs at least one character.
     /// - Complexity: O(n) where n is the filename length
     var isSafeFilenameForNTFS: Bool {
-        guard let last else {
-            return false
-        }
-
-        if last == space || last == point {
+        guard let last = unicodeScalars.last, last != space, last != point else {
             return false
         }
 
@@ -483,7 +493,7 @@ public extension String {
             return false
         }
 
-        return !isNTFSReservedDeviceName(prefix { $0 != point })
+        return ntfsReservedDeviceNameEnd(in: unicodeScalars) == nil
     }
 
     /// A Boolean value indicating whether the string is a valid NTFS filename including the length limit.
@@ -515,11 +525,7 @@ public extension String {
             return safe
         }
 
-        var truncated = truncateForNTFSLength(safe)
-
-        while let last = truncated.last, last == space || last == point {
-            truncated.removeLast()
-        }
+        let truncated = String(trimmingNTFSTrailingSpacesAndPeriods(truncateForNTFSLength(safe).unicodeScalars))
 
         guard !truncated.isEmpty else {
             return ntfsPlaceholderFilename
@@ -532,11 +538,7 @@ public extension String {
             return resanitized
         }
 
-        var refitted = truncateForNTFSLength(resanitized)
-
-        while let last = refitted.last, last == space || last == point {
-            refitted.removeLast()
-        }
+        let refitted = String(trimmingNTFSTrailingSpacesAndPeriods(truncateForNTFSLength(resanitized).unicodeScalars))
 
         return refitted.isEmpty ? ntfsPlaceholderFilename : refitted
     }
