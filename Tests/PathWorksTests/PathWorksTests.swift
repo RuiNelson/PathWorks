@@ -285,4 +285,31 @@ struct PathWorksTests {
         // samePath ignores the leading "/" — documented, intentional behavior
         #expect("/etc/passwd".samePath(otherPath: "etc/passwd", caseSensitive: true))
     }
+
+    @Test func separatorsFusedIntoGraphemes() {
+        // A combining mark after "/" and a prepended scalar (U+0600) before it each fuse the "/" into one Character;
+        // the path must still be split there, as a file system does.
+        #expect("a/\u{301}b".pathComponents == ["a", "\u{301}b"])
+        #expect("a\u{600}/b".pathComponents == ["a\u{600}", "b"])
+        #expect("a/\u{301}b".lastPathComponent == "\u{301}b")
+        #expect("a/\u{301}b".removingLastPathComponent == "a")
+
+        // A fused "/" in front of the path still makes it absolute
+        #expect("/\u{301}etc".pathComponents == ["\u{301}etc"])
+        #expect("/\u{301}etc".removingLastPathComponent == "/")
+        #expect("/\u{301}a/b".intermediaryPaths == ["/\u{301}a", "/\u{301}a/b"])
+        #expect("".appendingPathComponent("/\u{301}etc") == "/\u{301}etc")
+
+        // ".." hidden behind fused separators is resolved, so the result cannot climb out of the base
+        let hidden = "../\u{301}\u{600}/.."
+        #expect(hidden.pathComponents == [".."])
+        #expect("/srv/data".appendingPathComponent("\(hidden)/\(hidden)") == "/")
+        #expect("base".appendingPathComponent(hidden) == "")
+        let joined = "/srv/data".appendingPathComponent("x/\(hidden)")
+        #expect(joined == URL(fileURLWithPath: "/srv/data/x/\(hidden)").standardized.path)
+
+        // relative(to:) sees the same components
+        #expect("/a/\u{301}b".relative(to: "/a") == "\u{301}b")
+        #expect("/\u{301}a".relative(to: "\u{301}a") == "/\u{301}a")
+    }
 }

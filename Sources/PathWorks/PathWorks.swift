@@ -1,5 +1,20 @@
 import Foundation
 
+/// The raw `/`-separated segments of `path`, empty segments omitted and nothing resolved.
+///
+/// Splits on the `/` scalar rather than on `Character`s. A grapheme can fuse `/` with a neighboring scalar — a
+/// combining mark after it (`"/\u{301}"`) or a prepended scalar such as U+0600 before it — and `Character` comparison
+/// would then miss a separator that every file system still honors, letting `..` segments hide inside what looks like a
+/// single name.
+private func rawPathSegments(_ path: String) -> [String] {
+    path.unicodeScalars.split(separator: "/").map { String(String.UnicodeScalarView($0)) }
+}
+
+/// Whether `path` starts with the `/` scalar, compared by scalar for the same reason as ``rawPathSegments(_:)``.
+private func isAbsolutePath(_ path: String) -> Bool {
+    path.unicodeScalars.first == "/"
+}
+
 private func resolve(_ component: String, into result: inout [String], isAbsolute: Bool) {
     if component == "." {
         return
@@ -89,12 +104,13 @@ public extension String {
     /// - `..` removes the preceding component, or is preserved for relative paths with no parent to consume
     /// - `..` is dropped for absolute paths when already at root
     ///
+    /// - Note: Splitting is done on the `/` Unicode scalar, as a file system does, so a `/` that a grapheme fuses with
+    /// a combining mark or a prepended scalar still separates components: `"a/\u{301}b"` is `["a", "\u{301}b"]`.
     /// - Complexity: O(n) where n is the length of the path string
     var pathComponents: [String] {
-        let isAbsolute = first == "/"
-        let raw = self.split(separator: "/", omittingEmptySubsequences: true).map { String($0) }
+        let isAbsolute = isAbsolutePath(self)
         var result: [String] = []
-        for component in raw {
+        for component in rawPathSegments(self) {
             resolve(component, into: &result, isAbsolute: isAbsolute)
         }
         return result
@@ -121,7 +137,7 @@ public extension String {
             pcs.removeLast()
         }
 
-        return first == "/" ? pcs.rootPath : pcs.path
+        return isAbsolutePath(self) ? pcs.rootPath : pcs.path
     }
 
     /// Appends a path component, resolving `.` and `..` contextually against the base.
@@ -138,10 +154,10 @@ public extension String {
     /// - Parameter pc: The path component to append (may contain `/` separators, `.`, and `..`)
     /// - Complexity: O(n + m) where n is the current path length and m is the component length
     func appendingPathComponent(_ pc: String) -> String {
-        let isAbsolute = isEmpty ? pc.first == "/" : first == "/"
+        let isAbsolute = isAbsolutePath(isEmpty ? pc : self)
         var comps = pathComponents
-        for component in pc.split(separator: "/", omittingEmptySubsequences: true) {
-            resolve(String(component), into: &comps, isAbsolute: isAbsolute)
+        for component in rawPathSegments(pc) {
+            resolve(component, into: &comps, isAbsolute: isAbsolute)
         }
         return isAbsolute ? comps.rootPath : comps.path
     }
@@ -228,7 +244,7 @@ public extension String {
             return []
         }
 
-        let isRoot = first == "/"
+        let isRoot = isAbsolutePath(self)
         let comps = pathComponents
 
         guard !comps.isEmpty else {
@@ -263,8 +279,8 @@ public extension String {
     /// - Parameter basePath: The base path to compute relativity against
     /// - Complexity: O(n + m) where n and m are the component counts of both paths
     func relative(to basePath: String) -> String {
-        let selfIsAbsolute = first == "/"
-        let baseIsAbsolute = basePath.first == "/"
+        let selfIsAbsolute = isAbsolutePath(self)
+        let baseIsAbsolute = isAbsolutePath(basePath)
 
         guard selfIsAbsolute == baseIsAbsolute else {
             return self
@@ -317,8 +333,8 @@ public extension String {
 
 private let point: Character = "."
 private let space: Character = " "
-/// Forbidden scalars for NTFS: `< > : " / \ | ? *` plus controls U+0000...U+001F.
-/// Backed by `Foundation.CharacterSet` (bitmap lookup) instead of a `Set<Character>`.
+/// Forbidden scalars for NTFS: `< > : " / \ | ? *` plus controls U+0000...U+001F. Backed by `Foundation.CharacterSet`
+/// (bitmap lookup) instead of a `Set<Character>`.
 private let ntfsForbiddenCharacterSet: CharacterSet = {
     var set = CharacterSet(charactersIn: "<>:\"/\\|?*")
     set.formUnion(CharacterSet(charactersIn: Unicode.Scalar(0)! ... Unicode.Scalar(0x1F)!))
@@ -442,8 +458,8 @@ public extension String {
     /// A Boolean value indicating whether the string is already a valid NTFS filename.
     ///
     /// Returns `true` only when ``safeFilenameForNTFS`` would leave the string untouched: it is not empty, contains no
-    /// forbidden or control characters, does not end in a space or a period, and the segment before its first period
-    /// is not a reserved device name.
+    /// forbidden or control characters, does not end in a space or a period, and the segment before its first period is
+    /// not a reserved device name.
     ///
     /// - Note: The empty string is never safe, since a filename needs at least one character.
     /// - Complexity: O(n) where n is the filename length
