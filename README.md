@@ -144,13 +144,16 @@ A leading `/` is not part of the comparison, so an absolute path and its relativ
 ### Sanitize filenames for NTFS
 
 Forbidden characters (`< > : " / \ | ? *` and the control characters U+0000–U+001F) become periods, trailing
-whitespace and periods are stripped, and reserved device names are wrapped in underscores. The result is never empty:
-a name that sanitizes to nothing falls back to `"_"`.
+whitespace and periods are stripped, and reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `CONIN$`, `CONOUT$`,
+`COM1`–`COM9`, `LPT1`–`LPT9`, and `COM`/`LPT` with a superscript ¹ ² ³) are wrapped in underscores. The result is
+never empty: a name that sanitizes to nothing falls back to `"_"`.
 
 ```swift
 "report?:final.txt".safeFilenameForNTFS   // "report.final.txt"
 "CON".safeFilenameForNTFS                 // "_CON_"
 "CON.tar.gz".safeFilenameForNTFS          // "_CON_.tar.gz"  (matched before the first ".")
+"NUL .txt".safeFilenameForNTFS            // "_NUL_ .txt"    (spaces before the "." are ignored)
+"COM\u{B9}".safeFilenameForNTFS           // "_COM¹_"        (superscript port numbers are reserved too)
 "abc.   ".safeFilenameForNTFS             // "abc"           (trailing whitespace and dots removed)
 "...".safeFilenameForNTFS                 // "_"             (never returns an empty string)
 "".safeFilenameForNTFS                    // "_"

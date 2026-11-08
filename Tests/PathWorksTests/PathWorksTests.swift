@@ -354,4 +354,40 @@ struct PathWorksTests {
         #expect(fitted.isSafeFilenameForNTFSIncludingLength)
         #expect(fitted.safeNameForNTFSIncludingLength == fitted)
     }
+
+    @Test func ntfsReservedDeviceNamesWindowsAlsoMatches() {
+        // Spaces between the device name and the first period are ignored by Windows
+        #expect(!"CON .txt".isSafeFilenameForNTFS)
+        #expect(!"nul  .txt".isSafeFilenameForNTFS)
+        #expect("CON .txt".safeFilenameForNTFS == "_CON_ .txt")
+        #expect("nul  .tar.gz".safeFilenameForNTFS == "_nul_  .tar.gz")
+        #expect("NUL ".safeFilenameForNTFS == "_NUL_")
+
+        // Superscript port numbers and the console buffers are reserved too
+        for name in [
+            "COM\u{B9}",
+            "com\u{B2}",
+            "COM\u{B3}.txt",
+            "LPT\u{B9}",
+            "lpt\u{B2}.log",
+            "LPT\u{B3}",
+            "CONIN$",
+            "conout$.txt",
+        ] {
+            #expect(!name.isSafeFilenameForNTFS)
+        }
+        #expect("COM\u{B9}".safeFilenameForNTFS == "_COM\u{B9}_")
+        #expect("conout$.txt".safeFilenameForNTFS == "_conout$_.txt")
+
+        // Near misses stay safe
+        for name in [" CON.txt", "CON_.txt", "COM\u{2074}", "COM0", "LPT10", "CONIN", "CON\u{301}.txt"] {
+            #expect(name.isSafeFilenameForNTFS)
+        }
+
+        for input in ["CON .txt", "nul  .tar.gz", "COM\u{B9}", "CONIN$", "conout$.txt"] {
+            let sanitized = input.safeFilenameForNTFS
+            #expect(sanitized.isSafeFilenameForNTFS)
+            #expect(sanitized.safeFilenameForNTFS == sanitized)
+        }
+    }
 }

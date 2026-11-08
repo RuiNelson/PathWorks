@@ -350,30 +350,18 @@ private let ntfsForbiddenCharacterSet: CharacterSet = {
 
 /// The stand-in used when sanitizing removes every character of a filename.
 private let ntfsPlaceholderFilename = "_"
-private let ntfsReservedFilenames = [
-    "CON",
-    "PRN",
-    "AUX",
-    "NUL",
-    "COM1",
-    "COM2",
-    "COM3",
-    "COM4",
-    "COM5",
-    "COM6",
-    "COM7",
-    "COM8",
-    "COM9",
-    "LPT1",
-    "LPT2",
-    "LPT3",
-    "LPT4",
-    "LPT5",
-    "LPT6",
-    "LPT7",
-    "LPT8",
-    "LPT9",
-]
+/// Reserved Win32 device names, matched case-insensitively against the segment before the first period.
+///
+/// Superscript digits (U+00B9, U+00B2, U+00B3) also name serial and parallel ports, and `CONIN$`/`CONOUT$` name the
+/// console buffers. The list matches CPython's `ntpath.isreserved`.
+private let ntfsReservedFilenames: Set<String> = {
+    var names: Set<String> = ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"]
+    for digit in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "\u{B9}", "\u{B2}", "\u{B3}"] {
+        names.insert("COM" + digit)
+        names.insert("LPT" + digit)
+    }
+    return names
+}()
 
 /// Maximum filename length on NTFS: 255 UTF-16 code units (`NTFS_MAX_NAME_LEN`).
 private let ntfsMaxFilenameLengthUTF16 = 255
@@ -399,9 +387,13 @@ private func trimmingNTFSTrailingSpacesAndPeriods(_ scalars: String.UnicodeScala
 ///
 /// The device name is the segment before the first period, found by scalar for the same reason as
 /// ``trimmingNTFSTrailingSpacesAndPeriods(_:)``: in `"CON.\u{301}txt"` the period and the combining mark form one
-/// `Character`, yet Windows still sees `CON` before the first period.
+/// `Character`, yet Windows still sees `CON` before the first period. Windows also ignores spaces between the name and
+/// that period, so `"NUL .txt"` is still `NUL`; the returned end excludes those spaces.
 private func ntfsReservedDeviceNameEnd(in scalars: String.UnicodeScalarView) -> String.UnicodeScalarView.Index? {
-    let end = scalars.firstIndex(of: point) ?? scalars.endIndex
+    var end = scalars.firstIndex(of: point) ?? scalars.endIndex
+    while end > scalars.startIndex, scalars[scalars.index(before: end)] == space {
+        end = scalars.index(before: end)
+    }
     let segment = String(String.UnicodeScalarView(scalars[..<end]))
     return ntfsReservedFilenames.contains(segment.uppercased()) ? end : nil
 }
@@ -437,7 +429,7 @@ public extension String {
     /// ## NTFS Restrictions
     /// - Forbidden characters: `< > : " / \ | ? *`
     /// - Forbidden control characters: U+0000 through U+001F
-    /// - Reserved names: CON, PRN, AUX, NUL, COM1-9, LPT1-9
+    /// - Reserved names: CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM1-9, COM¹-³, LPT1-9, LPT¹-³
     /// - Names may not end in a space (U+0020) or a period (U+002E)
     ///
     /// ## Transformations
@@ -445,6 +437,7 @@ public extension String {
     /// - Trailing spaces and trailing periods are removed: `"abc.   "` → `"abc"`
     /// - Reserved device names are wrapped with underscores: `"CON"` → `"_CON_"`
     /// - Only the segment before the *first* period is matched and wrapped: `"CON.tar.gz"` → `"_CON_.tar.gz"`
+    /// - Spaces between a device name and that period are ignored when matching: `"NUL .txt"` → `"_NUL_ .txt"`
     /// - A name that sanitizes to nothing, or the empty string, falls back to `"_"`: `"..."` → `"_"`
     ///
     /// - Note: Periods and spaces are matched by Unicode scalar, as NTFS sees them, so one that a grapheme fuses with a
@@ -479,8 +472,8 @@ public extension String {
     /// A Boolean value indicating whether the string is already a valid NTFS filename.
     ///
     /// Returns `true` only when ``safeFilenameForNTFS`` would leave the string untouched: it is not empty, contains no
-    /// forbidden or control characters, does not end in a space or a period, and the segment before its first period is
-    /// not a reserved device name.
+    /// forbidden or control characters, does not end in a space or a period, and the segment before its first period,
+    /// with its trailing spaces ignored, is not a reserved device name.
     ///
     /// - Note: The empty string is never safe, since a filename needs at least one character.
     /// - Complexity: O(n) where n is the filename length
