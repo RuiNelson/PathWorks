@@ -373,6 +373,28 @@ struct PathWorksTests {
         #expect("/b/\(nfd)/x".relative(to: "/b/\(nfc)").unicodeScalars.elementsEqual("../\(nfd)/x".unicodeScalars))
     }
 
+    @Test func parentOfAscendingPaths() {
+        // The parent of a path made only of ".." ascents is one more ascent, not a directory below it
+        #expect("..".removingLastPathComponent == "../..")
+        #expect("../..".removingLastPathComponent == "../../..")
+        #expect("a/../..".removingLastPathComponent == "../..")
+        #expect("../".removingLastPathComponent == "../..")
+
+        // Paths with a name after the ascents, and absolute paths, are unchanged
+        #expect("../a".removingLastPathComponent == "..")
+        #expect("../../a/b".removingLastPathComponent == "../../a")
+        #expect("/..".removingLastPathComponent == "/")
+        #expect("/a/..".removingLastPathComponent == "/")
+        #expect("".removingLastPathComponent == "")
+        #expect("x".removingLastPathComponent == "")
+
+        // ".." is not a file name
+        #expect("..".directoryBaseNameAndExtensionFromPath == nil)
+        #expect("a/../..".directoryBaseNameAndExtensionFromPath == nil)
+        #expect("../a.b".directoryBaseNameAndExtensionFromPath! == ("..", "a", "b"))
+        #expect("../../a".directoryBaseNameAndExtensionFromPath! == ("../..", "a", ""))
+    }
+
     @Test func ntfsReservedDeviceNamesWindowsAlsoMatches() {
         // Spaces between the device name and the first period are ignored by Windows
         #expect(!"CON .txt".isSafeFilenameForNTFS)

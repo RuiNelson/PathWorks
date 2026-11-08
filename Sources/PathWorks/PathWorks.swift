@@ -137,11 +137,18 @@ public extension String {
     /// Removes the final component after `.` and `..` resolution. Absolute paths remain absolute; relative paths remain
     /// relative. A single-component path produces an empty string (or `/` for absolute paths).
     ///
+    /// A relative path that resolves to nothing but `..` ascents gains one more `..` instead, because dropping one
+    /// would name a directory below it rather than its parent: `"..".removingLastPathComponent` is `"../.."`.
+    ///
     /// - Complexity: O(n) where n is the length of the path string
     var removingLastPathComponent: String {
         var pcs = pathComponents
 
-        if !pcs.isEmpty {
+        if pcs.last == ".." {
+            // Resolution keeps `..` only as a leading run of a relative path, so every component here is an ascent.
+            pcs.append("..")
+        }
+        else if !pcs.isEmpty {
             pcs.removeLast()
         }
 
@@ -223,14 +230,15 @@ public extension String {
     /// The path decomposed into directory, base name, and extension components.
     ///
     /// Extracts all three major components of a file path: the containing directory, the base filename, and the file
-    /// extension. Returns `nil` if the path resolves to empty (e.g. `"."`).
+    /// extension. Returns `nil` if the path resolves to empty (e.g. `"."`) or ends in `..` (e.g. `"../.."`), since
+    /// neither names a file.
     ///
     /// - Complexity: O(n) where n is the length of the path string
     var directoryBaseNameAndExtensionFromPath:
         (directory: String, baseName: String, extension: String)? {
         let d = self.removingLastPathComponent
 
-        guard let file = self.lastPathComponent, !file.isEmpty else {
+        guard let file = self.lastPathComponent, !file.isEmpty, file != ".." else {
             return nil
         }
 
