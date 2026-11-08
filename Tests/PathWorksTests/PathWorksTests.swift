@@ -312,4 +312,17 @@ struct PathWorksTests {
         #expect("/a/\u{301}b".relative(to: "/a") == "\u{301}b")
         #expect("/\u{301}a".relative(to: "\u{301}a") == "/\u{301}a")
     }
+
+    @Test func extensionPeriodFusedIntoGrapheme() {
+        // U+0600 is a prepended scalar: it fuses with the "." after it into one Character
+        #expect("x\u{600}.jpg".separateExtension == ("x\u{600}", "jpg"))
+        #expect("\u{600}.jpg".separateExtension == ("\u{600}", "jpg"))
+        #expect("x\u{600}.".separateExtension == ("x\u{600}.", nil))
+        #expect("/a/x\u{600}.jpg".directoryBaseNameAndExtensionFromPath! == ("/a", "x\u{600}", "jpg"))
+
+        for name in ["x\u{600}.jpg", "\u{600}.jpg", "x\u{600}.", "a.\u{301}b"] {
+            let (base, ext) = name.separateExtension
+            #expect((base + (ext.map { ".\($0)" } ?? "")).unicodeScalars.elementsEqual(name.unicodeScalars))
+        }
+    }
 }

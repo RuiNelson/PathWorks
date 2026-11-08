@@ -188,21 +188,28 @@ public extension String {
     /// - Files starting with a period are treated as having no extension: `".hidden"` → `(".hidden", nil)`
     /// - A trailing period is an empty extension, not an extension: `"abc."` → `("abc.", nil)`
     /// - Interior periods are kept in the base name: `"a..b"` → `("a.", "b")`
+    /// - The period is found by Unicode scalar, so one that a grapheme fuses with a prepended scalar such as U+0600
+    /// still separates the extension: `"x\u{600}.jpg"` → `("x\u{600}", "jpg")`
     ///
     /// - Complexity: O(n) where n is the length of the filename
     var separateExtension: (base: String, ext: String?) {
-        guard let separator = lastIndex(of: ".") else {
+        let scalars = unicodeScalars
+
+        guard let separator = scalars.lastIndex(of: ".") else {
             return (self, nil)
         }
 
-        let extensionStart = index(after: separator)
+        let extensionStart = scalars.index(after: separator)
 
         // A leading period marks a hidden file and a trailing period yields an empty extension; neither is one.
-        guard separator != startIndex, extensionStart != endIndex else {
+        guard separator != scalars.startIndex, extensionStart != scalars.endIndex else {
             return (self, nil)
         }
 
-        return (String(self[startIndex ..< separator]), String(self[extensionStart...]))
+        return (
+            String(String.UnicodeScalarView(scalars[..<separator])),
+            String(String.UnicodeScalarView(scalars[extensionStart...]))
+        )
     }
 
     /// The path decomposed into directory, base name, and extension components.
