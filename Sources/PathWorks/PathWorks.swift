@@ -15,6 +15,14 @@ private func isAbsolutePath(_ path: String) -> Bool {
     path.unicodeScalars.first == "/"
 }
 
+/// Whether two path components name the same file system entry: equal scalar by scalar.
+///
+/// `String`'s `==` uses canonical equivalence and so calls `"caf\u{E9}"` (NFC) and `"cafe\u{301}"` (NFD) equal, but
+/// NTFS, ext4 and most other file systems store those as two different names.
+private func isSamePathComponent(_ lhs: String, _ rhs: String) -> Bool {
+    lhs.unicodeScalars.elementsEqual(rhs.unicodeScalars)
+}
+
 private func resolve(_ component: String, into result: inout [String], isAbsolute: Bool) {
     if component == "." {
         return
@@ -282,6 +290,8 @@ public extension String {
     /// - Returns `self` unchanged when the base ascends above the current directory past the common prefix — i.e. when
     /// the base components left after the common prefix still contain `..`, as in `"a".relative(to: "../b")`. The true
     /// answer would require knowing the current directory's own name, which a path string does not carry
+    /// - Components are compared scalar by scalar, as in ``samePath(otherPath:caseSensitive:)``, so a base spelled in a
+    /// different Unicode normalization form shares no prefix with the path
     ///
     /// - Parameter basePath: The base path to compute relativity against
     /// - Complexity: O(n + m) where n and m are the component counts of both paths
@@ -298,7 +308,7 @@ public extension String {
 
         var commonCount = 0
         let minCount = min(fullPathComps.count, basePathComps.count)
-        while commonCount < minCount && fullPathComps[commonCount] == basePathComps[commonCount] {
+        while commonCount < minCount && isSamePathComponent(fullPathComps[commonCount], basePathComps[commonCount]) {
             commonCount += 1
         }
 
@@ -323,6 +333,9 @@ public extension String {
     /// - A leading `/` is not part of the comparison, so an absolute path and its relative counterpart compare equal:
     ///   `"/etc/passwd".samePath(otherPath: "etc/passwd", caseSensitive: true)` is `true`. Check the leading `/`
     ///   separately when the distinction matters
+    /// - Components are compared scalar by scalar, not with `String`'s canonical equivalence, because NTFS, ext4 and
+    /// most other file systems store differently normalized names as different files: `"caf\u{E9}"` (NFC) and
+    ///   `"cafe\u{301}"` (NFD) are not the same path, whatever `caseSensitive` is
     ///
     /// - Parameters:
     ///   - other: The path to compare against
@@ -332,7 +345,7 @@ public extension String {
         let myComps = caseSensitive ? self.pathComponents : self.lowercased().pathComponents
         let otherComps = caseSensitive ? other.pathComponents : other.lowercased().pathComponents
 
-        return myComps == otherComps
+        return myComps.elementsEqual(otherComps, by: isSamePathComponent)
     }
 }
 

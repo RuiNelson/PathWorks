@@ -134,6 +134,8 @@ Comparison uses resolved components, so syntactically different but semantically
 
 A leading `/` is not part of the comparison, so an absolute path and its relative counterpart compare equal. Check the leading `/` separately when that distinction matters.
 
+Components are compared scalar by scalar, not with Swift's canonical equivalence, because most file systems store differently normalized names as different files: `"caf\u{E9}"` (NFC) and `"cafe\u{301}"` (NFD) are different paths. `relative(to:)` compares the same way.
+
 ```swift
 "/Users/Me".samePath(otherPath: "/users/me", caseSensitive: false)  // true
 "/Users/Me".samePath(otherPath: "/Users/Me", caseSensitive: true)   // true

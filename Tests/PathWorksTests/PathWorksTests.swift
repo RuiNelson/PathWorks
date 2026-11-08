@@ -355,6 +355,24 @@ struct PathWorksTests {
         #expect(fitted.safeNameForNTFSIncludingLength == fitted)
     }
 
+    @Test func pathComponentsCompareLiterally() {
+        let nfc = "caf\u{E9}"
+        let nfd = "cafe\u{301}"
+        #expect(nfc == nfd) // Swift's canonical equivalence, which file systems do not apply
+
+        #expect(!"/a/\(nfc)".samePath(otherPath: "/a/\(nfd)", caseSensitive: true))
+        #expect(!"/a/\(nfc)".samePath(otherPath: "/a/\(nfd)", caseSensitive: false))
+        #expect("/a/\(nfc)".samePath(otherPath: "/a/./\(nfc)", caseSensitive: true))
+        #expect("/A/CAF\u{C9}".samePath(otherPath: "/a/\(nfc)", caseSensitive: false))
+        #expect("/A/CAFE\u{301}".samePath(otherPath: "/a/\(nfd)", caseSensitive: false))
+
+        // relative(to:) shares no prefix across normalization forms
+        #expect("\(nfc)/x".relative(to: nfc) == "x")
+        #expect("\(nfc)/x".relative(to: nfd).unicodeScalars.elementsEqual("../\(nfc)/x".unicodeScalars))
+        #expect("/b/\(nfd)/x".relative(to: "/b/\(nfd)") == "x")
+        #expect("/b/\(nfd)/x".relative(to: "/b/\(nfc)").unicodeScalars.elementsEqual("../\(nfd)/x".unicodeScalars))
+    }
+
     @Test func ntfsReservedDeviceNamesWindowsAlsoMatches() {
         // Spaces between the device name and the first period are ignored by Windows
         #expect(!"CON .txt".isSafeFilenameForNTFS)
